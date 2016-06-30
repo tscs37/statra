@@ -1,5 +1,7 @@
 # State Transition Language
 
+[![Join the chat at https://gitter.im/eyecikjou567/statra](https://badges.gitter.im/eyecikjou567/statra.svg)](https://gitter.im/eyecikjou567/statra?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
+
 ## Goals
 
 * Provide a clean and compact language to write smart contracts
