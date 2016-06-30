@@ -8,15 +8,23 @@ The State Transition Language, short Statra aims to be a safe somewhat-functiona
 
 ```
 machine StatraToken {
-  var int tokenSupply = 0
-  var int etherSupply = 0
+  var {
+    int tokenSupply = 0
+    int etherSupply = 0
+  }
+
+  invar {
+    must: etherSupply = tokenSupply * tokenPrice
+  }
 
   const int tokenPrice = 10 * finney
   const int tokenDigits = 2
 
   mapping (address => int) tokenOwners
 
-  asserts:
+  invar must: sum(tokenOwners.value) == tokenSupply
+
+  assert {
     SupplyCheck {
       etherSupply == tokenSupply * tokenPrice
     }
@@ -25,21 +33,27 @@ machine StatraToken {
         etherSupply == this.value
     }
 
-  triggers:
+    HasFunds(int fund) {
+      tokenOwners[msg.sender] >= fund
+    }
+  }
+
+  trigger {
     buyTokens()
     sellTokens(int)
+  }
 
-  states:
+  state {
     Token default {
       SupplyCheck
     }
 
-    state SendTokens {
+    SendTokens {
       SupplyCheck
     }
+  }
 
-  transitions:
-
+  transition {
     Token -> SendTokens {
       on: buyTokens {
         increase(msg.value, tokenPrice)
@@ -55,30 +69,33 @@ machine StatraToken {
 
     Token -> Token {
       check: EtherCheck
-      on: sellTokens(tokens) {
+      on: sellTokens(tokens) check: hasFunds(tokens) {
         decrease ( tokens, tokenPrice )
         tokenOwners[msg.sender] -= tokens
         unsafe {
-            this.send(tokens)
+          this.send(tokens)
         }
       }
     }
+  }
 
-  macros:
+  macro  {
     increase ( value, price ) {
-        tokenSupply += value
-        etherSupply += value * price
+      tokenSupply += value
+      etherSupply += value * price
     }
 
     decrease ( value, price ) {
-        tokenSupply -= value
-        etherSupply -= value * price
+      tokenSupply -= value
+      etherSupply -= value * price
     }
+  }
 
-	views:
-    view balance () returns (int) {
-        return tokenOwner[msg.sender]
+  view {
+    balance () returns (int) {
+      return tokenOwner[msg.sender]
     }
+  }
 }
 ```
 
@@ -134,19 +151,34 @@ This Contract has an unnamed state with an empty assert and a transition to the 
 
 ## Order of Statra
 
-A Statra Contract has a fixed order in which data and code is declared;
+A Statra Contract has the following structures
 
-1. Variables
-2. Constants
-3. Mappings
-4. Asserts
-5. Trigger
-6. States
-7. Transitions
-8. Macros
-9. Views
+1. `var`
+2. `const`
+3. `mapping`
+4. `invar`
+5. `assert`
+6. `trigger`
+7. `state`
+8. `transition`
+9. `macro`
+10. `view`
 
-Deviating from this order results in a compiler error.
+Each section can contain 1 definition, which can be grouped together with `{}` to
+use multiple definitions at once.
+
+Example:
+
+```
+trigger someTrigger()
+//or
+trigger {
+  someTrigger(),
+  otherTrigger(),
+}
+//or
+trigger { someTrigger(), otherTrigger() }
+```
 
 ## Conditionals
 
@@ -229,6 +261,17 @@ These are destroyed when the function exits.
 View are purely read-only and cannot change the state of the machine.
 
 They can return value and are the only way of returning values from the inside of the machine outside of public variables.
+
+## Invariants
+
+Invariants are safety measures. The compiler will check statically if the Invariants
+are violated. If the compiler can't or notices a violation, a compiler error is
+generated.
+They are defined with the keyword `invar` followed by any of these:
+
+* `must:` - on any boolean expression - Expression must remain true at any time
+* `any:` - on any boolean expression of a mapping - Atleast one element of the mapping must remain true
+* `local:` -
 
 # Specification
 

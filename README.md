@@ -18,3 +18,23 @@
 * State Machines are sufficient in representing common problems in smart contracts
 * Formal Validation is easier
 * Securing State Machines against problems like Reentrancy is easy
+
+## Status
+
+At the moment, Statra is still an Work-In-Progress Language Specification.
+
+Once the Specification is fleshed out, work on the compiler can begin. As a goal,
+the compiler should produce human-readable solidity code, optionally EVM code.
+
+After finishing the compiler, focus goes to creating a standard macro Library
+and IDE support/integration.
+
+## Links
+
+[Language Specification](/statra.md)
+
+Compiler Specification (TBD)
+
+Macro Standard Library (TBD)
+
+IDE Integration (TBD)
