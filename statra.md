@@ -14,7 +14,7 @@ machine StatraToken {
   }
 
   invar {
-    must: etherSupply = tokenSupply * tokenPrice
+    must etherSupply = tokenSupply * tokenPrice
   }
 
   const int tokenPrice = 10 * finney
@@ -22,7 +22,7 @@ machine StatraToken {
 
   mapping (address => int) tokenOwners
 
-  invar must: sum(tokenOwners.value) == tokenSupply
+  invar must sum(tokenOwners.value) == tokenSupply
 
   assert {
     SupplyCheck {
@@ -54,28 +54,25 @@ machine StatraToken {
   }
 
   transition {
-    Token -> SendTokens {
-      on: buyTokens {
+    Token {
+      on buyTokens {
         increase(msg.value, tokenPrice)
-      }
-    }
-
-    SendTokens -> Token {
-      check: EtherCheck
-      on: all {
-        tokenOwners[msg.sender] = msg.value * tokenPrice
-      }
-    }
-
-    Token -> Token {
-      check: EtherCheck
-      on: sellTokens(tokens) check: hasFunds(tokens) {
+      } -> SendTokens
+      check EtherCheck
+      on sellTokens(tokens) check hasFunds(tokens) {
         decrease ( tokens, tokenPrice )
         tokenOwners[msg.sender] -= tokens
         unsafe {
           this.send(tokens)
         }
-      }
+      } -> Token
+    }
+
+    SendTokens{
+      check EtherCheck
+      on all {
+        tokenOwners[msg.sender] = msg.value * tokenPrice
+      } -> Token
     }
   }
 
@@ -269,9 +266,8 @@ are violated. If the compiler can't or notices a violation, a compiler error is
 generated.
 They are defined with the keyword `invar` followed by any of these:
 
-* `must:` - on any boolean expression - Expression must remain true at any time
-* `any:` - on any boolean expression of a mapping - Atleast one element of the mapping must remain true
-* `local:` -
+* `must` - on any boolean expression - Expression must remain true at any time
+* `any` - on any boolean expression of a mapping - Atleast one element of the mapping must remain true
 
 # Specification
 
