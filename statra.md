@@ -14,7 +14,7 @@ machine StatraToken {
   }
 
   invar {
-    must etherSupply = tokenSupply * tokenPrice
+    must etherSupply == tokenSupply * tokenPrice
   }
 
   const int tokenPrice = 10 * finney
@@ -30,7 +30,7 @@ machine StatraToken {
     }
 
     EtherCheck {
-        etherSupply == this.value
+      etherSupply == this.value
     }
 
     HasFunds(int fund) {
@@ -55,10 +55,13 @@ machine StatraToken {
 
   transition {
     Token {
+
       on buyTokens {
         increase(msg.value, tokenPrice)
       } -> SendTokens
+
       check EtherCheck
+
       on sellTokens(tokens) check hasFunds(tokens) {
         decrease ( tokens, tokenPrice )
         tokenOwners[msg.sender] -= tokens
@@ -66,13 +69,17 @@ machine StatraToken {
           this.send(tokens)
         }
       } -> Token
+      
     }
 
     SendTokens{
+
       check EtherCheck
+
       on all {
         tokenOwners[msg.sender] = msg.value * tokenPrice
       } -> Token
+
     }
   }
 
@@ -231,7 +238,13 @@ There are three predefined mappings: `msg`, `this` and `tx`.
 
 The standard trigger is usually a functional trigger. Sometimes conditional triggers may be used.
 
-A contract will traverse states until no further trigger is found. The contract will evaluate *all* triggers, so it is in the interest of users and developers to keep the number of transitions *from* a state small to avoid lengthy computation.
+A contract will traverse states until no further trigger is found. The compiler will enforce mutual exclusivity of
+triggers by checking if two transitions *could* logically be triggred at the same time. This does not mean the contract
+could ever enter such state, but this makes checking on compiler-side easier.
+
+A one-way exclusivity is enough; the only condition is that under all circumstances only one transition can ever be triggered, no matter how insane the state is.
+
+As not transitioning out of a state is perfectly legal, the compiler won't enforce to always use a transition.
 
 If more than 1 transition is found, the contract throws.
 
@@ -268,86 +281,3 @@ They are defined with the keyword `invar` followed by any of these:
 
 * `must` - on any boolean expression - Expression must remain true at any time
 * `any` - on any boolean expression of a mapping - Atleast one element of the mapping must remain true
-
-# Specification
-
-## EBNF
-
-```ebnf
-
-#####
-# EBNF for the Strata Language
-# Author: Tim Schuster
-# Licensed under: CC BY-SA
-# Notes:
-# The following EBNF is only a basic definition of the grammar.
-# It does not reflect the full language and does not encompass
-# callables like adresses.
-# A contract passing this EBNF is only syntactically correct but
-# not necessarily it's grammatical correctness.
-# This EBNF is subject to change as the language grows. Please
-# refer to the proper documentation for a full overview.
-#####
-
-# Markers around Sections
-BeginMarker = "{";
-EndMarker = "}";
-
-# Digits, Letters and Hex
-Digit = "0".."9";
-Letter = "a".."z"|"A".."Z";
-HexExtraDigit = "A" | "B" | "C" | "D" | "E" | "F";
-HexDigit = Digit | HexExtraDigit;
-HexValue = "0x" HexDigit {HexDigit};
-HexChar = "\\x" HexDigit HexDigit
-StringValue = "s" "\"" {Letter | Digit | HexDigit};
-IntValue = Digit {Digit};
-
-# Boolean Values (invalid == false)
-BoolValue = "true" | "false" | "invalid";
-
-# Types
-Type = "int" | "hash" | "address" | "string" | "boolean";
-
-# Identifier of Names, ie Contract or State Names
-Identifier = LatinLetter, { LatinLetter | NumericDigit };
-Value = IntValue | HexValue | StringValue | BoolValue;
-
-# A Contract is a series of machines
-Contract = Machine {"\n" Machine};
-
-# A Machine is a Encapsulated State Machine
-Machine = "machine" BeginMarker StateMachine EndMarker;
-
-# A State Machine consists of a Data Section,
-# a Conditional Section and Executional Section
-StateMachine = StateMachineData StateMachineCond StateMachineExec;
-
-# Data Section is concerned with global data, constants and mappings
-StateMachineData = [Variables] [Constants] [Mappings];
-
-# The Conditional Section sets up asserts and triggers
-StateMachineCond = Asserts [Triggers];
-
-# The Executional Section defines states, transitions and optinally macros
-StateMachineExec = States Transitions [Macros];
-
-# All Variables need to be always initialized
-Variables = {Variable "\n"};
-Variable = "variable" Type Identifier "=" Value;
-
-# Triggers are similar to an if-condition. They can be conditional
-# which means they entail some sort of global condition that must be met
-# or functional, which means they react to function calls and clear them
-Triggers = Trigger {Trigger};
-Trigger = "trigger" Identifier (ConditionalTrigger | FunctionalTrigger);
-ConditionalTrigger = "cond" BooleanExpression;
-FunctionalTrigger = "(" [ Parameters ] ")";
-
-# Asserts are almost like Triggers but applied later.
-# A Trigger determines if a Transition can be executed, an assert
-# ensures the transition has a clear and defined state, if not
-# the conditions are not met and the contract throws.
-Asserts = Assert {Assert};
-Assert = "assert" Identifier BeginMarker { BooleanExpression } EndMarker
-```
