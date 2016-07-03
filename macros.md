@@ -28,20 +28,20 @@ macro reduceBalance(key, value) {
 ```
 
 ```
-transition s->s {
-  on: first {
+transition s {
+  on first {
     .reduceBalance(owner, -100)
-  }
+  } -> s
 }
 ```
 
 the compiler will create this source code:
 
 ```
-transition s->s {
-  on: first {
+transition s {
+  on first {
     balances[owner] -= -100
-  }
+  } -> s
 }
 ```
 
@@ -116,3 +116,93 @@ transition someState {
 Inline Solidity Code is marked with `;` on both ends of a line.
 
 Multiline Solidity Code can be started with a `;;;` and ended with `;;;`
+
+Example of this:
+
+```
+namespace "extlib.esoteric"
+
+macro sendAllOnHash(data, hash, target) {
+  unsafe {
+    ;;;
+      if (sha3($data) == $hash) {
+        $target.send(this.balance);
+      } else {
+        throw;
+      }
+    ;;;
+  }
+}
+```
+
+Usage:
+```
+transition someState {
+  on all {
+    .extlib.esoteric.sendAllOnHash(
+      msg.data,
+      0x9bae41660bb84c843934d46a7f4dba041b48c90d7e0ae234be693a395087af0a,
+      msg.sender,
+    )
+  } -> someOtherState
+}
+```
+
+## Sending Ether in Macros
+
+
+Just like in Transactions, Macros **must only** send ether inside an `unsafe` clause.
+
+The Statra Compiler will check this and refuse compilation if this is violated.
+
+## Importing Namespaces
+
+By default the compiler will look through it's standard library collection and build a lookup database.
+
+If you need to import a namespace to `.` this can be done with the `import` keyword.
+
+This will put all macros in your `.` namespace and overwrite any conflicting macro names.
+
+```
+import "stdlib.hash"
+
+transition someState {
+  on first {
+    hash = .sha3("test")
+  } -> someOtherState
+}
+```
+
+### Importing to Subnamespace
+
+You can import a namespace into a subnamespace like follows:
+
+```
+import "stdlib.hash" > .hash
+```
+
+This will again overwrite any existing macros.
+
+### Reimporting
+
+Reimporting is the process of importing a namespace into itself to prevent other libraries
+from overwriting it's macros.
+
+```
+import "stdlib.hash" > .stdlib.hash
+```
+
+Or in short notation
+
+```
+import "stdlib.hash" >@
+```
+## Location of Macro Files
+
+The compiler will first look for Macros inside the current file. These have the highest priority and if a macro is found here it is always included unless the belonging namespace was overwritten.
+
+Next the compiler will look through the project macros and include them, unless that namespace is overwritten.
+
+Lastly the compiler will check it's own library and include any macros.
+
+If a namespace is overwritten, the compiler checks all location *before* including the macro.
