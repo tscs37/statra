@@ -1,4 +1,4 @@
-﻿# Statra Design Document
+# Statra Design Document
 
 ## Goals
 
@@ -48,7 +48,7 @@ machine StatraToken {
       SupplyCheck
     }
 
-    SendTokens {
+    SendTokens ephemeral {
       SupplyCheck
     }
   }
@@ -69,7 +69,7 @@ machine StatraToken {
           this.send(tokens)
         }
       } -> Token
-      
+
     }
 
     SendTokens{
@@ -111,8 +111,6 @@ To change the state the programmer defines `transition` which can have condition
 
 Variables and constants have to be initialized and used. Unused Variables or Constants cause compilation error.
 
-A `state` contains multiple asserts. Before leaving or entering a state all asserts must pass as true.
-
 A `transition` defines a Begin-State, an End-State, any number of triggers and any number of conditions. Transitions must be unambiguous, meaning a transition cannot happen at the same time as any other; all transitions *from* a state must be mutually exclusive. A Transition is like a function.
 
 A contract runs as long as it's statemachine finds transitions that can be traversed as their conditions are true. Initially triggers are used to find "called functions" in transitions, they are represented in contract code as non-throw asserts.
@@ -147,13 +145,13 @@ A Minimal Contract according to the rules looks as follows:
 machine {
     assert a { }
     state s { }
-    transition s->s { on: first check: a {} }
+    transition s->s { on first check a {} }
 }
 ```
 
 This Contract has an unnamed state with an empty assert and a transition to the state itself at any function call.
 
-## Order of Statra
+## Pieces of Statra
 
 A Statra Contract has the following structures
 
@@ -184,23 +182,37 @@ trigger {
 trigger { someTrigger(), otherTrigger() }
 ```
 
-## Conditionals
+## var - Few Types, Much Safety, Wow
 
-You may have noticed that the example Statra Token Contract does not feature conditionals.
+Variables are the data of a machine.
 
-That's because Statra has no concept of loops or ifs or switch-instructions.
+As they are considered in-universe for the machine, it can interact with them and produce side-effects without every worrying about unsafety (outside of asserts)
 
-Instead, States and Transitions can be used to build these things. This makes it safer to loop or switch-case as each decision is always asserted to be correct.
+A variable has one of a few types; `bool`, `int`, `opint`, `address`, `callable`, `bytes`, `string` and `hash`
 
-## Strings
+### Booleans
 
-Statra has basic implementation of strings. It can check for string equivalency, concat and substring. It is prefered to handle the actual string implementation off chain and use the `hash` type.
+Booleans are either 0, thusly false, or true.
 
-## Callables
+### Integers
+
+All Integers are represented as int256 within the machine.
+
+### OPIntegers
+
+Overflow Protected Integers use checks to protect against over- and underflows, throwing if such things occur.
+
+### Addresses
+
+To protect the developer and user, addresses are strictly different types.
+
+A int256 cannot be converted into an address type within the Statra language but this feature may be provided as macro at your own risk.
+
+### Callables
 
 Callables are a subtype of an address. They can be used interchangably inside a statemachine and represent any external contract with an ABI.
 
-There are three predefined callables; `this`, which represents the current contract.
+There are predefined callables; `this`, which represents the current contract, `tx` which represents the transaction origin, `msg` which is the current tx.
 
 Callables are the only type that has functions in the traditional sense, which is necessary to interface with other contracts.
 
@@ -222,7 +234,27 @@ transition s->s {
 }
 ```
 
-## Mappings
+### Strings and Bytes
+
+Statra has basic implementation of strings. It can check for string equivalency, concat and substring. It is prefered to handle the actual string implementation off chain and use the `hash` type.
+
+Bytes work similarly to strings and the two types are interchangable. Bytes allow addressing of single characters whereas strings do not, but strings allow for easy equality checks.
+
+Either provides a few upsides and downsides.
+
+### Hash
+
+A hash is a SHA3-256 value. It cannot be directly casted into any other type.
+
+It has a special property in that a equality check will compare against **the hash** of the other side. (Comparing two hashes from external sources is quite silly and comparing two hashes stored internally is quite sillier)
+
+## const - Always the same
+
+Constants are predefined values.
+
+They have the same types as variables but that value is backed into the contract code and cannot be changed retrospectively.
+
+## mapping - General Purpose Arrays
 
 Mappings are access like arrays with an key. This returns the value of the key.
 
@@ -234,7 +266,27 @@ There are three predefined mappings: `msg`, `this` and `tx`.
 
 `this` is the state of the current contract, ie it's holdings of Ether and Gas or Address.
 
-## Triggers
+They are not handled under variables and represent a closed-off type in the compiler, thusly they cannot be represented as constants.
+
+## invar - Safety in Numbers
+
+Invariants are safety measures. The compiler will check statically if the Invariants
+are violated. If the compiler can't or notices a violation, a compiler error is
+generated.
+They are defined with the keyword `invar` followed by any of these:
+
+* `must` - on any boolean expression - Expression must remain true at any time
+* `any` - on any boolean expression of a mapping - Atleast one element of the mapping must remain true
+
+## assert - Assertions and Truth
+
+Assertions are special kinds of triggers. They work exactly like conditional triggers but cannot work like functional triggers.
+
+An assert can only be true or false, if it is called and evaluates to false, the contract throws.
+
+A false assertion is viewed as an inconsistent state of the machine and rather than continuing in an unsafe state, the machine terminates and rolls back the transaction via `throw`
+
+## trigger - Getting Triggered
 
 The standard trigger is usually a functional trigger. Sometimes conditional triggers may be used.
 
@@ -260,7 +312,50 @@ The trigger `*` and `first` is true when the contract is initialized and only th
 
 The trigger `@` and `last` is true if the last send/call was successfull.
 
-The trigger `all` is always true.
+The trigger `all` is always true. Only the last defined transition of a state is allowed to utilize this trigger and at maximum one can be used per state. It is generally recommended to refrain from using this trigger at all.
+
+## state - And its enemies
+
+States are checkpoints in the Statra language. With asserts they assure the integrity of the data in the machine and then they select a transition.
+
+There are currently six modes of states; nondefault, default, noncritical, critical, normal and ephemeral.
+
+A state is a mixture of atleast three modes.
+
+There can only be one default state, it is the state in which the machine initializes. All other state are non-default.
+
+Within Normal States the machine can terminate, ephemeral states cannot terminate.
+
+Noncritical States allow reentrancy, critical states block reentrancy. A state is by default critical.
+
+Each tag has an opposing tag that means the opposite of the other. See; normal and ephemeral, noncritical and critical.
+
+By default all states are nondefault, critical and normal.
+
+A state may define a few global assertions. These global asserts are executed when the machine is activated and when a state is entered.
+
+Be aware that as a non-functional language, a state that executes a transition **will have side effects and this is intended**. The language is neither stateless nor without side effects, this makes programming a bit easier to think and reason about.
+
+### State Tags
+
+A state may be tagged with any of it's modifiers. If two conflicting modifiers are found the compiler shows an error and terminates.
+
+```
+state DefaultState default noncritical {}
+
+state OtherState nondefault critical ephemeral {}
+//equivalent to
+state OtherState {}
+```
+
+
+## Conditionals
+
+You may have noticed that the example Statra Token Contract does not feature conditionals.
+
+That's because Statra has no concept of loops or ifs or switch-instructions, similar to common State Machines.
+
+Instead, States and Transitions can be used to build these things. This makes it safer to loop or switch-case as each decision is always asserted to be correct.
 
 ## View
 
@@ -271,13 +366,3 @@ These are destroyed when the function exits.
 View are purely read-only and cannot change the state of the machine.
 
 They can return value and are the only way of returning values from the inside of the machine outside of public variables.
-
-## Invariants
-
-Invariants are safety measures. The compiler will check statically if the Invariants
-are violated. If the compiler can't or notices a violation, a compiler error is
-generated.
-They are defined with the keyword `invar` followed by any of these:
-
-* `must` - on any boolean expression - Expression must remain true at any time
-* `any` - on any boolean expression of a mapping - Atleast one element of the mapping must remain true
