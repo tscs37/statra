@@ -103,32 +103,6 @@ machine StatraToken {
 }
 ```
 
-## Under the hood
-
-Statra defines multiple `machines` within a contract. At the end of each Transaction a Statra Contract is in a well-defined and assert-checked state.
-
-To change the state the programmer defines `transition` which can have conditions (`asserts`) and triggers. A trigger is normally a function call, conditions are shared as `asserts`.
-
-Variables and constants have to be initialized and used. Unused Variables or Constants cause compilation error.
-
-A `transition` defines a Begin-State, an End-State, any number of triggers and any number of conditions. Transitions must be unambiguous, meaning a transition cannot happen at the same time as any other; all transitions *from* a state must be mutually exclusive. A Transition is like a function.
-
-A contract runs as long as it's statemachine finds transitions that can be traversed as their conditions are true. Initially triggers are used to find "called functions" in transitions, they are represented in contract code as non-throw asserts.
-
-Asserts are not part of the conditions needed to traverse a transition, they are executed before the transition and can throw if an unsafe state is found.
-
-A `macro` defines inline code, the compiler will simply inject the code by renaming variables. Each macro-injection has it's own base-id for internal variables to avoid conflicts during compilation time.
-
-An `assert` defines conditions that must be true otherwise it throws. Each line is it's own condition unless the line ends with a boolean symbol like `&&`.
-
-Empty Asserts evaluate to `true` and do not throw.
-
-As `condition` defines conditions that can be true or false. A `trigger` is a form of condition.
-
-Inside a Transition normal code similar to Solidity is found with functional differences. Since Statra is meant to be sideeffect-less, the act of sending ether or otherwise manipulating the outside world of the state machine (even other statemachines within the contract) must be wrapped within an `unsafe` statement.
-
-`unsafe` code blocks are run under a mutex to prevent reentrancy problems. Macros cannot contain `unsafe` code and there can be at maximum one `unsafe` code block per transition. The unsafe code must be the last part of a transition and it cannot be the only code of a transition.
-
 `view` are purely functional operations. They cannot modify the state or any variables, it can use temporary scope-local variables.
 
 To work each Statra Contract *must* define the following: at least one `state`, at least one `assert`, at least one `transition`
@@ -348,16 +322,69 @@ state OtherState nondefault critical ephemeral {}
 state OtherState {}
 ```
 
+## transition - From A to
 
-## Conditionals
+Transitions are the heart of a state-machine. They are fairly simple constructs that have a set of conditions and when met, they do something.
 
-You may have noticed that the example Statra Token Contract does not feature conditionals.
+Under Statra, Conditions are split into two parts, Triggers and Asserts.
 
-That's because Statra has no concept of loops or ifs or switch-instructions, similar to common State Machines.
+When a Statra Contract gets invoked, it will, after asserting the state, check for transitions with valid triggers.
 
-Instead, States and Transitions can be used to build these things. This makes it safer to loop or switch-case as each decision is always asserted to be correct.
+The compiler will ensure that only 1 transition can be true at a time through symbolic execution; triggers are summed up, not evaluated, and then all possible combinations are tested.
 
-## View
+This means even if Trigger A is written such that it **cannot** be logically true while B is true, the compiler won't consider that and refuse compilation if a transition does not insure this itself.
+
+The following code is therefore invalid:
+
+```
+transition {
+  A on triggerA {} -> B
+  A on triggerB {} -> C
+}
+```
+
+The correct code should look like this:
+
+```
+transition {
+  A on triggerA {} -> B
+  A on triggerB on !triggerA {} -> C
+}
+```
+
+The compiler can now ensure that the two transitions are never true at the same time.
+
+Within a transition, code may change data of the machine and send transaction within unsafe blocks.
+
+The syntax is equivalent to simple Solidity code.
+
+### unsafe - Beware
+
+Transitions may cause transactions only when they have entered the unsafe state. Please note that the unsafe state is not bad, it merely marks a special section of code.
+
+An unsafe block **must** be at the end of a transition. It uses a mutex to ensure that reentrancy or multi-threading-like execution won't cause problems. Even on the least protective parts of Statra, a unsafe-clause will remain the best protected.
+
+The reason why transactions must be cause in unsafe blocks is partly to prevent reentrancy problems and partly because a state-machine cannot interact outside it's universe.
+
+To use the analogy of the Introductionary File, a coffee machine cannot interact with a vending machine. It's outside the scope of the coffee machine's universe.
+
+Incoming Transactions and User Data are well within that scope.
+
+## macro - Avoid Typing
+
+Macros in Statra are a lot similar to functions in other languages.
+
+They generall behave as pass-by-reference functions, so they have direct access to the data.
+
+Note that a Macro is never really a function. The compiler will simply expand the macro calls by the code of the macro before passing it further into the compile process.
+
+The actual Statra Compiler has no concept of a macro or function.
+
+Macros themselves are situated inside namespaces, the namespace of the current contract and therefore it's macros is refered to as the root namespace, using only the `.` followed by the name of the macro.
+
+All other namespaces are children of the root namespace; the namespace `std` becomes `.std.<macroname>`
+
+## view - The Inner Workings of Machines
 
 A view can define scope-local variables via the `variable` syntax.
 
